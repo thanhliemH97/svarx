@@ -1,0 +1,657 @@
+# ===============================================
+# ===== Analyse de données pour la révision =====
+# ===============================================
+library(MTS)
+library(mvtnorm)
+library(BigVAR)
+
+matR.VARXp12m3 <- function(k=3, kx=3, ind=rep(1,11), indx=c(1,1,1) ) {
+#
+# Le modèle postule p=12 maximum pour la partie AR et m=3
+# ce qui veut dire que c'est un VARX avec une partie instantanée
+# et trois retards. L'analyse de données aura une partie endogène de dimension k=3
+# et exogène de dimension kx=3.
+#
+# Il est supposé que dans ind on trouve des 0 (non-inclus) et des 1 (inclus).
+#
+# Il est supposé un VARX(12,3), ce qui veut dire que le délai 12 est inclus tout le temps,
+# et le retard exogène de délai trois est également inclus tout le temps. 
+# Les indices intermédiaires peuvent être cependant retirés.
+#
+# On note que la matrice R commence par mettre des 1 partout (et pour p=12, m=3, ils resteront là).
+#
+  mon.nrow <- 1+12*k + (1+3)*kx
+  mon.ncol <- k
+  matR <- matrix(1, nrow = mon.nrow, ncol=mon.ncol)
+  for(i in 1:11) {
+    matR[(k*(i-1)+2):(k*i+1),] <- ind[i]
+  }
+  for(i in 1:3) {
+    matR[(12*k+(i-1)*kx+2):(12*k+i*kx+1),] <- indx[i]
+  }
+  matR
+}
+
+
+
+matR.VARX <- function(k=3, kx=3, pmax = 12, mmax = 3, ind=rep(1,pmax), indx=rep(1,mmax+1) ) {
+#
+# Le modèle postule pmax arbitraire pour la partie AR et mmax arbitraire
+# ce qui veut dire que c'est un VARX avec une partie instantanée
+# et mmax retards. 
+# La simulation aura une partie endogène de dimension k
+# et exogène de dimension kx.
+#
+# Il est supposé que dans ind on trouve des 0 (non-inclus) et des 1 (inclus).
+#
+# Il est supposé un VARX(pmax,mmax), car la première composante de indx est pour le délai 0.
+# Cependant, les ordres maximum pourraient ne pas être dans le modèle.
+# 
+# L'intérêt de la fonction est de spécifier un VARX(pmax,mmax-1). 
+#
+#
+  p <- pmax
+  mp1 <- mmax + 1
+  mon.nrow <- 1+p*k + mp1*kx
+  mon.ncol <- k
+  matR <- matrix(1, nrow = mon.nrow, ncol=mon.ncol)
+  for(i in 1:p) {
+    matR[(k*(i-1)+2):(k*i+1),] <- ind[i]
+  }
+  for(i in 1:mp1) {
+    matR[(p*k+(i-1)*kx+2):(p*k+i*kx+1),] <- indx[i]
+  }
+  matR
+}
+
+
+
+TousLesVARXp12m3 <- function() {
+#
+# Cette fonction liste tous les 2^11*2^3 modèles VARX(12,3), avec le délai p=12 toujours inclus et m=3 toujours inclus.
+#
+  mon.row <- 2^11
+  output.var <- matrix(0,nrow=mon.row, ncol=11)
+  no.ligne <- 1
+  for(i1 in 0:1) {
+   for(i2 in 0:1) {
+    for(i3 in 0:1) {
+      for(i4 in 0:1) {
+       for(i5 in 0:1) {
+        for(i6 in 0:1) {
+         for(i7 in 0:1) {
+          for(i8 in 0:1) {
+           for(i9 in 0:1) {
+            for(i10 in 0:1) {
+             for(i11 in 0:1) {
+                  output.var[no.ligne,] <- c(i1,i2,i3,i4,i5,i6,i7,i8,i9,i10,i11)
+                  no.ligne <- no.ligne+1
+                }}}}}}}}}}}
+  mon.row.exo <- 2^3
+  output.exo <- matrix(0,nrow=mon.row.exo, ncol=3)
+  no.ligne <- 1
+  for(i1 in 0:1) {
+   for(i2 in 0:1) {
+    for(i3 in 0:1) {
+       output.exo[no.ligne,] <- c(i1,i2,i3)
+       no.ligne <- no.ligne+1
+  }}}
+  list(output.var=output.var, output.exo=output.exo)
+}
+TousLesVARXp12m3()
+
+
+
+VARXaic <- function (zt, p, xt = NULL, m = 0, include.mean = T, fixed = NULL, 
+    output = T) 
+{
+    zt = as.matrix(zt)
+    if (length(xt) < 1) {
+        m = -1
+        kx = 0
+    }
+    else {
+        xt = as.matrix(xt)
+        kx = dim(xt)[2]
+    }
+    if (p < 0) 
+        p = 0
+    ist = max(p, m) + 1
+    nT = dim(zt)[1]
+    k = dim(zt)[2]
+    yt = zt[ist:nT, ]
+    xmtx = NULL
+    if (include.mean) 
+        xmtx = rep(1, (nT - ist + 1))
+    if (p > 0) {
+        for (i in 1:p) {
+            xmtx = cbind(xmtx, zt[(ist - i):(nT - i), ])
+        }
+    }
+    if (m > -1) {
+        for (j in 0:m) {
+            xmtx = cbind(xmtx, xt[(ist - j):(nT - j), ])
+        }
+    }
+    p1 = dim(xmtx)[2]
+    nobe = dim(xmtx)[1]
+    if (length(fixed) < 1) {
+        xpx = t(xmtx) %*% xmtx
+        xpy = t(xmtx) %*% yt
+        xpxi = solve(xpx)
+        beta = xpxi %*% xpy
+        resi = as.matrix(yt - xmtx %*% beta)
+        sig = crossprod(resi, resi)/nobe
+        co = kronecker(sig, xpxi)
+        se = sqrt(diag(co))
+        se.beta = matrix(se, nrow(beta), k)
+        npar = nrow(beta) * k
+        d1 = log(det(sig))
+        aic = d1 + 2 * npar/nobe
+        bic = d1 + (npar * log(nobe))/nobe
+    }
+    else {
+        beta = matrix(0, p1, k)
+        se.beta = matrix(1, p1, k)
+        resi = yt
+        npar = 0
+        for (i in 1:k) {
+            idx = c(1:p1)[fixed[, i] > 0]
+            npar = npar + length(idx)
+            if (length(idx) > 0) {
+                xm = as.matrix(xmtx[, idx])
+                y1 = matrix(yt[, i], nobe, 1)
+                xpx = t(xm) %*% xm
+                xpy = t(xm) %*% y1
+                xpxi = solve(xpx)
+                beta1 = xpxi %*% xpy
+                res = y1 - xm %*% beta1
+                sig1 = sum(res^2)/nobe
+                se = sqrt(diag(xpxi) * sig1)
+                beta[idx, i] = beta1
+                se.beta[idx, i] = se
+                resi[, i] = res
+            }
+        }
+        sig = crossprod(resi, resi)/nobe
+        d1 = log(det(sig))
+        aic = d1 + 2 * npar/nobe
+        bic = d1 + log(nobe) * npar/nobe
+    }
+    Ph0 = NULL
+    icnt = 0
+    if (include.mean) {
+        Ph0 = beta[1, ]
+        icnt = icnt + 1
+        cat("constant term: ", "\n")
+        cat("est: ", round(Ph0, 4), "\n")
+        cat(" se: ", round(se.beta[1, ], 4), "\n")
+    }
+    Phi = NULL
+    if (p > 0) {
+        Phi = t(beta[(icnt + 1):(icnt + k * p), ])
+        sePhi = t(se.beta[(icnt + 1):(icnt + k * p), ])
+        for (j in 1:p) {
+            cat("AR(", j, ") matrix", "\n")
+            jcnt = (j - 1) * k
+            print(round(Phi[, (jcnt + 1):(jcnt + k)], 3))
+            cat("standard errors", "\n")
+            print(round(sePhi[, (jcnt + 1):(jcnt + k)], 3))
+        }
+        icnt = icnt + k * p
+    }
+    if (m > -1) {
+        cat("Coefficients of exogenous", "\n")
+        Beta = t(beta[(icnt + 1):(icnt + (m + 1) * kx), ])
+        seBeta = t(se.beta[(icnt + 1):(icnt + (m + 1) * kx), 
+            ])
+        if (kx == 1) {
+            Beta = t(Beta)
+            seBeta = t(seBeta)
+        }
+        for (i in 0:m) {
+            jdx = i * kx
+            cat("lag-", i, " coefficient matrix", "\n")
+            print(round(Beta[, (jdx + 1):(jdx + kx)], 3))
+            cat("standard errors", "\n")
+            print(round(seBeta[, (jdx + 1):(jdx + kx)], 3))
+        }
+    }
+    cat("Residual Covariance Matrix", "\n")
+    print(round(sig, 5))
+    cat("===========", "\n")
+    cat("Information criteria: ", "\n")
+    cat("AIC: ", aic, "\n")
+    cat("BIC: ", bic, "\n")
+    VARX <- list(data = zt, xt = xt, aror = p, m = m, Ph0 = Ph0, 
+        Phi = Phi, beta = Beta, residuals = resi, Sigma = sig, 
+        coef = beta, se.coef = se.beta, 
+        aic=aic, 
+        include.mean = include.mean, 
+        critere.aic=list(aic=aic,nobe=nobe,sig=sig,npar=npar)
+        )
+}
+
+blocId <- function(pos=1, k, n) {
+#
+# La routine donne une matrice nulle, de dimension k x (kn), à l'exception d'un bloc identité, situé à la position i.
+# Par position i on veut dire qu'il y a n matrices nulles de dimension k x k, sauf celle en position i qui est identité.
+ output <- matrix(0, nrow=k, ncol=k*n)
+ for(i in 1:k) {
+   output[i, i+(pos-1)*k] <- 1
+ }
+ output
+}
+
+
+# --- Fonction alternative pour les ordres maximaux ---
+VARXorder2 = function(y, x, max_p = 13, max_s = 3, output = T, intercept = T) {
+  y = as.matrix(y)
+  x = as.matrix(x)
+  n = dim(y)[1]
+  k = dim(y)[2]
+  n_x = dim(x)[1]
+  l = dim(x)[2]
+  d = max(max_p,max_s)
+  
+  if (n_x != n) {
+    cat("Adjustment made for different nobs:", c(n, n_x), "\n")
+    n = min(n, n_x)
+  }
+  n_prime = n - d
+  y_trunc = y[(d+1):n, ]
+  
+  aic = matrix(0, max_p, max_s + 1)
+  rownames(aic) = paste0("p=",1:max_p)
+  colnames(aic) = paste0("s=",0:max_s)
+  bic = aic
+  hqc = aic
+  
+  for (s in 0:max_s) {
+    for (p in 1:max_p) {
+      if (intercept) {z = rep(1, n_prime)}
+      else {z = NULL}
+      
+      for (i in 1:p) z = cbind(z, y[(d+1 - i):(n - i), ])
+      
+      for (j in 0:s) z = cbind(z, x[(d+1 - j):(n - j), ])
+      
+      ztz = t(z) %*% z
+      zty = t(z) %*% y_trunc
+      beta = solve(ztz, zty)
+      resi = y_trunc - z %*% beta
+      sigma = t(resi) %*% resi / n_prime
+      ln_ds = log(det(sigma))
+      npar = k * (p*k + l*(s+1) + 1)
+      
+      aic[p, s + 1] = ln_ds + 2 * npar / n_prime
+      bic[p, s + 1] = ln_ds + log(n_prime) * npar / n_prime
+      hqc[p, s + 1] = ln_ds + 2 * log(log(n_prime)) * npar / n_prime
+    }
+  }
+  ind.min = function(A) {
+    index = which(A == min(A), arr.ind = TRUE)
+    p = index[1,1]
+    s = index[1,2] - 1 # because s = 0,1,...
+    return(c(p,s))
+  }
+  
+  aic_order = ind.min(aic)
+  bic_order = ind.min(bic)
+  hqc_order = ind.min(hqc)
+  
+  if (output) {
+    cat("selected order(p,s): aic = ", aic_order, "\n")
+    cat("selected order(p,s): hqc = ", hqc_order, "\n")
+    cat("selected order(p,s): bic = ", bic_order, "\n")
+  }
+  VARXorder2 = list(aic = aic, aicor = aic_order,  
+                    hqc = hqc, hqcor = hqc_order,
+                    bic = bic, bicor = bic_order)
+}
+
+
+
+
+# --- Changement de répertoire: 2TB, Programmation, SubsetVARX ---
+# --- Laptop, Programmation, SubsetVARX ---
+# --- Laptop: changer répertoire courant; 
+#             C:, Windows, Utilisateurs; duch; Documents; Programmation; SubsetVARX 
+
+mozzarella <- scan("mozzarellaCAN.txt")
+cheddar <- scan("cheddarCAN.txt")
+ricotta <- scan("ricottaCAN.txt")
+
+laitQC <- scan("LaitQC.txt")
+laitON <- scan("LaitON.txt")
+laitCB <- scan("LaitCB.txt")
+
+# --- Définition d'objets dans la classe "time series"
+mozzarellaTS <- ts(mozzarella, start=c(2003,1), frequency=12)
+cheddarTS    <- ts(cheddar, start=c(2003,1), frequency=12)
+ricottaTS    <- ts(ricotta, start=c(2003,1), frequency=12)
+
+laitQC.TS <- ts(laitQC, start=c(2003,1), frequency=12)
+laitON.TS <- ts(laitON, start=c(2003,1), frequency=12)
+laitCB.TS <- ts(laitCB, start=c(2003,1), frequency=12)
+
+# --- Graphique des séries originales ---
+par(mfrow=c(3,2))
+ts.plot(mozzarellaTS,ylab="Mozzarella",xlab="Year")
+ts.plot(cheddarTS,ylab="Cheddar",xlab="Year")
+ts.plot(ricottaTS,ylab="Ricotta",xlab="Year")
+
+ts.plot(laitQC.TS,ylab="Milk, Quebec",xlab="Year")
+ts.plot(laitON.TS,ylab="Milk, Ontario",xlab="Year")
+ts.plot(laitCB.TS,ylab="Milk, British Columbia",xlab="Year")
+
+# --- On prend le log et la première différence ---
+mozzarella <- diff(log(mozzarella))
+cheddar <- diff(log(cheddar))
+ricotta <- diff(log(ricotta))
+
+laitQC <- diff(log(laitQC))
+laitON <- diff(log(laitON))
+laitCB <- diff(log(laitCB))
+
+# --- Graphique des séries transformées ---
+par(mfrow=c(3,2))
+ts.plot(diff(log(mozzarellaTS)),ylab="Mozzarella",xlab="Year")
+ts.plot(diff(log(cheddarTS)),ylab="Cheddar",xlab="Year")
+ts.plot(diff(log(ricottaTS)),ylab="Ricotta",xlab="Year")
+
+ts.plot(diff(log(laitQC.TS)),ylab="Milk, Quebec",xlab="Year")
+ts.plot(diff(log(laitON.TS)),ylab="Milk, Ontario",xlab="Year")
+ts.plot(diff(log(laitCB.TS)),ylab="Milk, British Columbia",xlab="Year")
+
+
+# --- On postule p=12, m=3 ---
+OutputY <- cbind(mozzarella, cheddar, ricotta)
+InputX <- cbind(laitQC, laitON, laitCB)
+mon.p <- 12
+mon.m <- 3
+mon.k <- ncol(OutputY)
+mon.kx <- ncol(InputX)
+
+
+# --- Exploration de l'ordre max p ---
+VARXorder(OutputY, InputX)
+
+# --- Ajustement du modèle plein ---
+mat.contraintes0 <- matrix(1, nrow = 1+mon.p*mon.k+(mon.m+1)*mon.kx, ncol=mon.k)
+mat.contraintes  <- mat.contraintes0
+model1.out       <- VARXaic(OutputY, p= mon.p, InputX, m=mon.m, fixed=mat.contraintes)
+t(model1.out$coef)
+# t(model1.out$se.coef)
+t.ratio.mod1 <- model1.out$coef/model1.out$se.coef
+t(t.ratio.mod1)
+model1.out$critere.aic
+#
+# On note qu'initialement il y avait n =223 données. Avec la différentiation cela passe à 222. Compte tenu que 
+# l'on ajuste un VAR(12), avec une partie exogène bien sûr, donc VARX, mais la partie VAR implique la perte
+# de 12 données, ce qui implique que le nombre de données effectif est de 222 - 12 = 210.
+# 
+log(det(model1.out$critere.aic$sig)) + 2*model1.out$critere.aic$npar/model1.out$critere.aic$nobe
+
+
+# --- Ajustement de tous les modèles ---
+AjusterTous <- function(OutputY, p= mon.p, InputX, m=mon.m) {
+  output <- matrix(0, nrow=2^11*2^3, ncol=11+3+1)
+  TousLesCas <- TousLesVARXp12m3()
+  no.mod <- 1 
+  for(i in 1:2^11) {
+   for(j in 1:2^3) {
+     indi <- TousLesCas$output.var[i,]
+     indix <- TousLesCas$output.exo[j,]
+     mat.contraintes <- matR.VARXp12m3(k=ncol(OutputY), kx=ncol(InputX), ind=indi,indx=indix)
+     model.out <- VARXaic(OutputY, p= mon.p, InputX, m=mon.m, fixed=mat.contraintes)
+     output[no.mod,] <- c(indi, indix, model.out$aic)
+     no.mod <- no.mod+1
+   }
+  }
+  output
+}
+
+AjusterTous.out <- AjusterTous(OutputY, p= mon.p, InputX, m=mon.m)
+AjusterTous.out[AjusterTous.out[,15]==min(AjusterTous.out[,15]),]
+
+
+mat.contraintes <- matR.VARXp12m3(k=mon.k,kx=mon.kx,ind=c(1,1,1,1,1,0,1,0,1,0,0),indx=c(1,0,0))
+model2.out <- VARXaic(OutputY, p= mon.p, InputX, m=mon.m, fixed=mat.contraintes)
+t(model2.out$coef)
+t(model2.out$se.coef)
+ t.ratio.mod2 <- model2.out$coef/model2.out$se.coef
+ t(t.ratio.mod2)
+mat.contraintes.final <- ifelse( abs(t.ratio.mod2) > 2, 1, 0)
+mat.contraintes.final[1,] <- rep(1,3)
+model2.out$critere.aic
+log(det(model2.out$critere.aic$sig)) + 2*model2.out$critere.aic$npar/model2.out$critere.aic$nobe
+
+
+model1.out$aic
+model2.out$aic
+
+# --- Étude de la stationnarité ---
+coef.full <- t(model1.out$coef)[,2:37]
+VAR1.full <- rbind(
+                 coef.full,
+                 blocId(1,3,12),
+                 blocId(2,3,12),
+                 blocId(3,3,12),
+                 blocId(4,3,12),
+                 blocId(5,3,12),
+                 blocId(6,3,12),
+                 blocId(7,3,12),
+                 blocId(8,3,12),
+                 blocId(9,3,12),
+                 blocId(10,3,12),
+                 blocId(11,3,12)
+              )
+eigen(VAR1.full)$values
+
+coef.subset <- t(model2.out$coef)[,2:37]
+VAR1.subset <- rbind(
+                 coef.subset,
+                 blocId(1,3,12),
+                 blocId(2,3,12),
+                 blocId(3,3,12),
+                 blocId(4,3,12),
+                 blocId(5,3,12),
+                 blocId(6,3,12),
+                 blocId(7,3,12),
+                 blocId(8,3,12),
+                 blocId(9,3,12),
+                 blocId(10,3,12),
+                 blocId(11,3,12)
+              )
+eigen(VAR1.subset)$values
+
+
+
+# --- Diagnostiques du modèle original ---
+residus.varx <- model1.out$res
+par(mfrow=c(2,3))
+res.mozarella <- residus.varx[,1]
+res.cheddar <- residus.varx[,2]
+res.ricotta <- residus.varx[,3]
+
+acf(res.mozarella, ylim=c(-0.2,1))
+acf(res.cheddar, ylim=c(-0.2,1))
+acf(res.ricotta, ylim=c(-0.2,1))
+
+ccf(res.mozarella, res.cheddar, ylim=c(-0.2,0.2))
+ccf(res.mozarella, res.ricotta, ylim=c(-0.2,0.2))
+ccf(res.cheddar, res.ricotta, ylim=c(-0.2,0.2))
+
+
+# --- Diagnostiques du modèle restreint ---
+residus.subset.varx <- model2.out$res
+par(mfrow=c(2,3))
+res.mozarella.subset <- residus.subset.varx[,1]
+res.cheddar.subset <- residus.subset.varx[,2]
+res.ricotta.subset <- residus.subset.varx[,3]
+acf(res.mozarella.subset, ylim=c(-0.2,1))
+acf(res.cheddar.subset, ylim=c(-0.2,1))
+acf(res.ricotta.subset, ylim=c(-0.2,1))
+ccf(res.mozarella.subset, res.cheddar.subset, ylim=c(-0.2,0.2))
+ccf(res.mozarella.subset, res.ricotta.subset, ylim=c(-0.2,0.2))
+ccf(res.cheddar.subset, res.ricotta.subset, ylim=c(-0.2,0.2))
+
+log(223-1)
+3.5 * (223-1)^0.2
+3.0 * (223-1)^0.3
+
+statTn.out <- matrix(0, nrow=3, ncol=5)
+statTn.out[1,1] <- statTn(residus.subset.varx, tronque, 2)
+statTn.out[1,2] <- statTn(residus.subset.varx, tronque, 3)
+statTn.out[1,3] <- statTn(residus.subset.varx, tronque, 5)
+statTn.out[1,4] <- statTn(residus.subset.varx, tronque, 10)
+statTn.out[1,5] <- statTn(residus.subset.varx, tronque, 15)
+ 
+statTn.out[2,1] <- statTn(residus.subset.varx, bartlett, 2)
+statTn.out[2,2] <- statTn(residus.subset.varx, bartlett, 3)
+statTn.out[2,3] <- statTn(residus.subset.varx, bartlett, 5)
+statTn.out[2,4] <- statTn(residus.subset.varx, bartlett, 10)
+statTn.out[2,5] <- statTn(residus.subset.varx, bartlett, 15)
+
+statTn.out[3,1] <- statTn(residus.subset.varx, daniell, 2)
+statTn.out[3,2] <- statTn(residus.subset.varx, daniell, 3)
+statTn.out[3,3] <- statTn(residus.subset.varx, daniell, 5)
+statTn.out[3,4] <- statTn(residus.subset.varx, daniell, 10)
+statTn.out[3,5] <- statTn(residus.subset.varx, daniell, 15)
+
+round(statTn.out, 2)
+
+> round(statTn.out, 2)
+      [,1]  [,2]  [,3]  [,4]  [,5]
+[1,] -0.75 -1.46 -2.40 -3.34 -2.41
+[2,] -0.08 -0.31 -0.93 -2.06 -2.72
+[3,] -0.32 -0.51 -1.12 -2.18 -2.93
+> 
+
+
+# --- Utilisation du package BigVAR ---
+OutputY <- cbind(mozzarella, cheddar, ricotta)
+InputX <- cbind(laitQC, laitON, laitCB)
+mon.p <- 12
+mon.m <- 3
+mon.k <- ncol(OutputY)
+mon.kx <- ncol(InputX)
+
+# Modification des données afin de décaler l'effet instantané de la partie exogène.
+dim(OutputY)
+dim(InputX)
+OutputYprime <- OutputY
+InputXprime <- rbind(InputX[-1,], rep(0,3) )
+
+mat.contraintes.rev0 <- matR.VARX(k=3,kx=3,pmax=12,mmax=3,
+                                  c(1,1,1,1,1,1,1,1,1,1,1,1),
+                                  c(1,1,1,1)
+                                  )
+mat.contraintes.rev1 <- matR.VARX(k=3,kx=3,pmax=12,mmax=4,
+                                  c(1,1,1,1,1,1,1,1,1,1,1,1),
+                                  c(0,1,1,1,1)
+                                  )
+mat.contraintes0 <- matrix(1, nrow = 1+mon.p*mon.k+(mon.m+1)*mon.kx, ncol=mon.k)
+dim(mat.contraintes.rev0)
+dim(mat.contraintes0)
+
+modelrev0.out  <- VARXaic(OutputY, p= 12, InputX, m=3, fixed=mat.contraintes.rev0)
+modelrev1.out  <- VARXaic(OutputY, p= 12, InputXprime, m=4, fixed=mat.contraintes.rev1)
+
+modelrev0.out$Phi
+modelrev1.out$Phi
+
+modelrev0.out$beta
+modelrev1.out$beta
+
+# --- BigVAR ---
+Y.BigVAR <- cbind( OutputY, InputXprime)
+VARXfit.0 <- VARXFit(Y.BigVAR, p=12, IC=NULL, VARX=list(k=3,s=4) )
+names(VARXfit.0)
+
+VARXfit.0$Bhat
+modelrev1.out$Phi
+modelrev1.out$beta
+
+# --- BigVAR.fit, premier essai ---
+BigVARfit.0 <- BigVAR.fit(Y.BigVAR, p=12, 'Basic', lambda = 0.001, VARX=list(k=3,s=4) )
+BigVARfit.0
+BigVARfit.0[,1,1]
+BigVARfit.0[,2:(3*12+1),1]
+BigVARfit.0[,(3*12+2):(3*12+1+3*4),1]
+
+# ------ comparer LS et BigVAR ------
+VARXfit.0$Bhat
+BigVARfit.0[,2:(3*12+1),1]
+BigVARfit.0[,(3*12+2):(3*12+1+3*4),1]
+# -----------------------------------
+
+BigVARfit.1 <- BigVAR.fit(Y.BigVAR, p=12, 'Lag', lambda = 0.2, VARX=list(k=3,s=4) )
+BigVARfit.1
+BigVARfit.1[,1,1]
+BigVARfit.1[,2:(3*12+1),1]
+BigVARfit.1[,(3*12+2):(3*12+1+3*4),1]
+
+BigVARfit.0
+BigVARfit.1
+
+# --- cv.BigVAR, premier essai ---
+modVARX.0 <- constructModel(Y.BigVAR, p=12, "Basic", gran=c(150,10), h=1, VARX=list(k=3,s=4) )
+cv.BigVAR.0 <- cv.BigVAR(modVARX.0)
+str(cv.BigVAR.0)
+coef(cv.BigVAR.0)
+
+modVARX.1 <- constructModel(Y.BigVAR, p=12, "Lag", gran=c(150,10), h=1, VARX=list(k=3,s=4) )
+cv.BigVAR.1 <- cv.BigVAR(modVARX.0)
+str(cv.BigVAR.1)
+coef(cv.BigVAR.1)
+
+# -------------------------
+# --- Tuner les modèles ---
+# -------------------------
+mat.contraintes <- matR.VARXp12m3(k=mon.k,kx=mon.kx,ind=c(1,1,1,1,1,0,1,0,1,0,0),indx=c(1,0,0))
+model2.out <- VARXaic(OutputY, p= mon.p, InputX, m=mon.m, fixed=mat.contraintes)
+t(model2.out$coef)
+t(model2.out$se.coef)
+ t.ratio.mod2 <- model2.out$coef/model2.out$se.coef
+ t(t.ratio.mod2)
+mat.contraintes.final <- ifelse( abs(t.ratio.mod2) > 2, 1, 0)
+mat.contraintes.final[1,] <- rep(1,3)
+model2.out$critere.aic
+log(det(model2.out$critere.aic$sig)) + 2*model2.out$critere.aic$npar/model2.out$critere.aic$nobe
+
+model3.out <- VARXaic(OutputY, p= 12, InputX, m=3, fixed=mat.contraintes.final)
+t(model3.out$coef)
+t(model3.out$se.coef)
+model3.out$critere.aic
+log(det(model3.out$critere.aic$sig)) + 2*model3.out$critere.aic$npar/model3.out$critere.aic$nobe
+
+modVARX.0 <- constructModel(Y.BigVAR, p=12, "Basic", gran=c(150,10), h=1, VARX=list(k=3,s=4) )
+cv.BigVAR.0 <- cv.BigVAR(modVARX.0)
+str(cv.BigVAR.0)
+coef(cv.BigVAR.0)
+mat.contraintes.BigVAR.0 <- ifelse( abs(coef(cv.BigVAR.0)) > 0, 1, 0)
+mat.contraintes.BigVAR.0[,1] <- rep(1,3)
+mat.contraintes.BigVAR.0 <- t(mat.contraintes.BigVAR.0)
+model4.out <- VARXaic(OutputY, p= 12, InputX, m=3, fixed=mat.contraintes.BigVAR.0)
+t(model4.out$coef)
+t(model4.out$se.coef)
+model4.out$critere.aic
+log(det(model4.out$critere.aic$sig)) + 2*model4.out$critere.aic$npar/model4.out$critere.aic$nobe
+
+modVARX.1 <- constructModel(Y.BigVAR, p=12, "Lag", gran=c(150,10), h=1, VARX=list(k=3,s=4) )
+cv.BigVAR.1 <- cv.BigVAR(modVARX.1)
+str(cv.BigVAR.1)
+coef(cv.BigVAR.1)
+mat.contraintes.BigVAR.1 <- ifelse( abs(coef(cv.BigVAR.1)) > 0, 1, 0)
+mat.contraintes.BigVAR.1[,1] <- rep(1,3)
+mat.contraintes.BigVAR.1 <- t(mat.contraintes.BigVAR.1)
+model5.out <- VARXaic(OutputY, p= 12, InputX, m=3, fixed=mat.contraintes.BigVAR.1)
+t(model5.out$coef)
+t(model5.out$se.coef)
+model5.out$critere.aic
+log(det(model5.out$critere.aic$sig)) + 2*model5.out$critere.aic$npar/model5.out$critere.aic$nobe
+
+
+
