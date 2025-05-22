@@ -91,7 +91,7 @@ VARXorder2 = function(y, x, max_p = 13, max_s = 3, output = T) {
     y_trunc = y[(s+1):n, ]
     z = rep(1, n_prime_x)
 
-    for (j in 0:s) z = cbind(z, x[(d+1 - j):(n - j), ])
+    for (j in 0:s) z = cbind(z, x[(s+1 - j):(n - j), ])
       
     ztz = t(z) %*% z
     zty = t(z) %*% y_trunc
