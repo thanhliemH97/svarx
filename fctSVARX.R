@@ -110,6 +110,7 @@ VARXorder2 = function(y, x, max_p = 13, max_s = 3, output = T) {
       
       d = max(p, s)
       n_prime  = n - d
+      y_trunc = y[(d+1):n, ]
       z = rep(1, n_prime)
       
       for (i in 1:p) z = cbind(z, y[(d+1 - i):(n - i), ])
