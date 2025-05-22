@@ -20,38 +20,37 @@ genSVARX = function(n,phi,beta,sigma,lagY,lagX,phiX,sigmaX,phi0){
   
   #Si avoir une seule matrice phi, changer sa classe pour une liste.
   if (class(phi)[1] == "matrix") phi = list(phi) 
-
-  K = ncol(phi[[1]]) # dimension de la série chronologique endogène
   
   if (class(beta)[1] == "matrix") beta = list(beta)
+
+  k = ncol(phi[[1]]) # dimension de la série chronologique endogène
+  #l = ncol(beta[[1]]) # dimension de la série chronologique exogène
   
-  L = ncol(beta[[1]]) # dimension de la série chronologique exogène
-  
-  #Matrice covariance IDENTITÉ par défaut
+  #Matrice covariance identité par défaut
   if (missing(sigma)) sigma = diag(1,k)
   
-  if (missing(phi0)) phi0 = matrix(0, nrow=K,ncol=1)
+  if (missing(phi0)) phi0 = matrix(0, nrow = k, ncol = 1)
   
   chauffe = n+1 #temps de chauffe de "n+1" 
   nn = n + chauffe 
   p = max(lagY) #ordre autorégressif 
   q = max(lagX) #ordre autorégressif exogène (il y a un délai 0)
   d = max(p,q) #max pour éviter des erreurs de récursion dans la simulation
-  w = MASS::mvrnorm(nn, mu=rep(0,K), Sigma=sigma) #bruit blanc vectoriel
-  x = MTS::VARMAsim(nn, arlags = 1, phi = phiX, sigma = sigmaX)$series # VAR(1)
-  y = matrix(0, ncol=K, nrow=nn) #variable endogène initialisée à 0
+  w = MASS::mvrnorm(nn, mu = rep(0,k), Sigma = sigma) #Wt ~ bruit blanc vectoriel
+  x = MTS::VARMAsim(nn, arlags = 1, phi = phiX, sigma = sigmaX)$series # Xt ~ VAR(1)
+  y = matrix(0, ncol = k, nrow = nn) #variable endogène initialisée à 0
   
-  #Récursion 
+  #Récursion Yt ~ SVAR(I,J)
   for (t in (d+1):nn) {
-    sum = matrix(0, ncol=K, nrow=1)
-    #Yt ~ SVAR(I,J)
-    for (i in 1:length(lagY)) sum = sum + y[t-lagY[i],] %*% t(phi[[i]])
-    for (j in 1:length(lagX)) sum = sum + x[t-lagX[j],] %*% t(beta[[j]])
+    sum = matrix(0, ncol = k, nrow = 1)
+    
+    for (i in 1:length(lagY)) sum = sum + y[t-lagY[i], ] %*% t(phi[[i]])
+    for (j in 1:length(lagX)) sum = sum + x[t-lagX[j], ] %*% t(beta[[j]])
 
     y[t,] =  sum + w[t,] + t(phi0)
   }
-  #enlever les "chauffe" premiers nombres aléatoires
   
+  #Enlever les "chauffe" premiers nombres aléatoires
   y = y[-(1:chauffe), ]
   x = x[-(1:chauffe), ]
   return(list(y = as.matrix(y), x = as.matrix(x)))
