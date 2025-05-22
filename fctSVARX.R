@@ -72,7 +72,7 @@ VARXorder2 = function(y, x, max_p = 13, max_s = 3, output = T) {
   k = dim(y)[2]
   n_x = dim(x)[1]
   l = dim(x)[2]
-  if (maxp < 1) maxp = 1
+  if (max_p < 1) max_p = 1
   
   if (n_x != n) {
     cat("Adjustment made for different nobs:", c(n, n_x), "\n")
