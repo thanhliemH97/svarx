@@ -1,4 +1,5 @@
 library(MASS) #plus rapide que library(mvtnorm)
+library(MTS)
 library(Matrix)
 ########################################################
 ###### Générer une série chronologique SVARX     #######
@@ -37,19 +38,13 @@ genSVARX = function(n,phi,beta,sigma,lagY,lagX,phiX,sigmaX,phi0){
   q = max(lagX) #ordre autorégressif exogène (il y a un délai 0)
   d = max(p,q) #max pour éviter des erreurs de récursion dans la simulation
   w = MASS::mvrnorm(nn, mu=rep(0,K), Sigma=sigma) #bruit blanc vectoriel
-  x = matrix(0, ncol=L, nrow=nn) #variable exogène VAR(1)
-  y = matrix(0, ncol=K, nrow=nn) #variable endogène initialisée à NULL
+  x = MTS::VARMAsim(nn, arlags = 1, phi = phiX, sigma = sigmaX)$series # VAR(1)
+  y = matrix(0, ncol=K, nrow=nn) #variable endogène initialisée à 0
   
-  #Génération de Xt ~ VAR(1)
-  x[1,] = MASS::mvrnorm(1, mu = rep(0, L), Sigma = sigmaX)
-  for (t in 2:nn) {
-    x[t,] = x[t-1,] %*% t(phiX) + mvrnorm(1, mu=rep(0,L), Sigma=sigmaX)
-  }
   #Récursion 
-  
   for (t in (d+1):nn) {
     sum = matrix(0, ncol=K, nrow=1)
-    #Yt ~ SVAR(,)
+    #Yt ~ SVAR(I,J)
     for (i in 1:length(lagY)) sum = sum + y[t-lagY[i],] %*% t(phi[[i]])
     for (j in 1:length(lagX)) sum = sum + x[t-lagX[j],] %*% t(beta[[j]])
 
