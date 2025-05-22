@@ -64,33 +64,53 @@ genSVARX = function(n,phi,beta,sigma,lagY,lagX,phiX,sigmaX,phi0){
 
 #Sélection de p et s
 
-VARXorder2 = function(y, x, max_p = 13, max_s = 3, output = T, intercept = T) {
+VARXorder2 = function(y, x, max_p = 13, max_s = 3, output = T) {
+  
   y = as.matrix(y)
   x = as.matrix(x)
   n = dim(y)[1]
   k = dim(y)[2]
   n_x = dim(x)[1]
   l = dim(x)[2]
-  d = max(max_p,max_s)
+  if (maxp < 1) maxp = 1
   
   if (n_x != n) {
     cat("Adjustment made for different nobs:", c(n, n_x), "\n")
     n = min(n, n_x)
   }
-  n_prime = n - d
-  y_trunc = y[(d+1):n, ]
-  
-  aic = matrix(0, max_p, max_s + 1)
-  rownames(aic) = paste0("p=", 1:max_p)
+
+  aic = matrix(0, max_p + 1, max_s + 1)
+  rownames(aic) = paste0("p=", 0:max_p)
   colnames(aic) = paste0("s=", 0:max_s)
   bic = aic
   hqc = aic
   
   for (s in 0:max_s) {
     
+    n_prime_x
+    y_trunc = y[(s+1):n, ]
+    z = rep(1, n_prime_x)
+
+    for (j in 0:s) z = cbind(z, x[(d+1 - j):(n - j), ])
+      
+    ztz = t(z) %*% z
+    zty = t(z) %*% y_trunc
+    beta = solve(ztz, zty)
+    resi = y_trunc - z %*% beta
+    sigma = t(resi) %*% resi / n_prime_x
+    ln_ds = log(det(sigma))
+      
+    npar_x = k*l*(s+1)
+      
+    aic[1, s + 1] = ln_ds + 2 * npar_x / n_prime_x
+    bic[1, s + 1] = ln_ds + log(n_prime_x) * npar_x / n_prime_x
+    hqc[1, s + 1] = ln_ds + 2 * log(log(n_prime_x)) * npar_x / n_prime_x
+    
     for (p in 1:max_p) {
-      if (intercept) {z = rep(1, n_prime)}
-      else {z = NULL}
+      
+      d = max(p, s)
+      n_prime  = n - d
+      z = rep(1, n_prime)
       
       for (i in 1:p) z = cbind(z, y[(d+1 - i):(n - i), ])
       
@@ -103,23 +123,23 @@ VARXorder2 = function(y, x, max_p = 13, max_s = 3, output = T, intercept = T) {
       sigma = t(resi) %*% resi / n_prime
       ln_ds = log(det(sigma))
       
-      npar = k * (p*k + l*(s+1))
-  
-      aic[p, s + 1] = ln_ds + 2 * npar / n_prime
-      bic[p, s + 1] = ln_ds + log(n_prime) * npar / n_prime
-      hqc[p, s + 1] = ln_ds + 2 * log(log(n_prime)) * npar / n_prime
+      npar = k*k*p + k*l*(s+1)
+      
+      aic[p + 1, s + 1] = ln_ds + 2 * npar / n_prime
+      bic[p + 1, s + 1] = ln_ds + log(n_prime) * npar / n_prime
+      hqc[p + 1, s + 1] = ln_ds + 2 * log(log(n_prime)) * npar / n_prime
     }
   }
   ind.min = function(A) {
     index = which(A == min(A), arr.ind = TRUE)
     p = index[1,1]
-    s = index[1,2] - 1 # because s = 0,1,...
+    s = index[1,2]
     return(c(p,s))
   }
   
-  aic_order = ind.min(aic)
-  bic_order = ind.min(bic)
-  hqc_order = ind.min(hqc)
+  aic_order = ind.min(aic) - 1
+  bic_order = ind.min(bic) - 1
+  hqc_order = ind.min(hqc) - 1
   
   if (output) {
     cat("selected order(p,s): aic = ", aic_order, "\n")
