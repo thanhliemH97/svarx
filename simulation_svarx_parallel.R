@@ -223,3 +223,5 @@ bicSelection_b/nsim
 cat("\n")
 #sink()
 tac
+
+stopCluster(cl)
