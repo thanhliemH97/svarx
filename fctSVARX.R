@@ -234,7 +234,7 @@ SVARX = function(y, x, lagY, lagX, intercept=T, print=T){
   a = length(lagY)
   b = length(lagX)
   n_prime  = n-d
-  Y = y[(d+1):n, ]
+  Y = y[(d+1):n, ] #fixé en partant
   
   if (intercept) {Z = rep(1, n_prime)}
   else {Z = NULL}
@@ -278,14 +278,14 @@ SVARX = function(y, x, lagY, lagX, intercept=T, print=T){
   exo = remainder[, -(1:(k*a))]
   colnames(exo) = paste0("Exo", rep(lagX,each=l))
   rownames(exo) = paste0("y", 1:k)
-  coef = list(intercept = intercepts, ar=ar, exo=exo)
+  coef = list(int = intercepts, ar=ar, exo=exo)
   lag = list(y=lagY, x=lagX)
   
   if (print) print(cbind(intercepts,ar,exo))
   
   SVARX = list(coefficients=coef,covariance=sigma,loglik=loglik,aic=aic,
                bic=bic,hqc=hqc,covCoef=covBeta,stdCoef=se.Beta,resid = resi,
-               y=y,x=x,lag=lag)
+               y=y,x=x,lag=lag, intercept=intercept)
 }
 
 #Prévision
@@ -303,27 +303,21 @@ SVARX.pred = function(model, new.x, h, level=0.95, cf = T, print=T){
   qn = qnorm(1-(1-level)/2)
   nh = n+h
   
-  #data
-  yStar =  function(y,p){
-    n = nrow(y)
-    return(matrix( c(t(y[n:(n-p+1),])), ncol = 1 ))
-  }
-  xStarLagged = function(x,j,s){
-    nx = nrow(x)
-    return(matrix(c(t(x[(nx-j):(nx-s-j), ])), ncol = 1))
-  }
-  bigW = function(h, outputY, inputX, p, s, intercept=T) {
-    n = nrow(outputY)
-    k = ncol(outputY)
-    truncX = inputX[1:(n+h),]
-    if (intercept) {
-      tempo = cbind( matrix(1, ncol = h), t(yStar(outputY, p)) )
-    } else {
-      tempo = t(yStar(outputY, p))
+  pow = function(A, n) {
+    if (!is.matrix(A)) return(A**n)
+    else {
+      output = diag(1, nrow(A))
+      
+      if(n == 0) return(output)
+      if(n == 1) return(A)
+      
+      while (n > 0) {
+        if (n %% 2 == 1) output = A %*% output
+        A = A %*% A
+        n = n %/% 2
+      }
+      return(output)
     }
-    
-    for (j in 0:(h-1)) tempo = cbind( tempo, t(xStarLagged(truncX, j, s)) )
-    tempo %x% diag(k)
   }
   C.I = function(lagY,k) {
     p = max(lagY)
@@ -352,23 +346,29 @@ SVARX.pred = function(model, new.x, h, level=0.95, cf = T, print=T){
     colnames(output) = paste0("Exo", rep(0:s, each = l))
     output
   }
-  pow = function(A, n) {
-    if (!is.matrix(A)) return(A**n)
-    else {
-      output = diag(1, nrow(A))
-      
-      if(n == 0) return(output)
-      if(n == 1) return(A)
-      
-      while (n > 0) {
-        if (n %% 2 == 1) output = A %*% output
-        A = A %*% A
-        n = n %/% 2
-      }
-      return(output)
-    }
+  #data
+  yStar =  function(y,p){
+    n = nrow(y)
+    return(matrix( c(t(y[n:(n-p+1),])), ncol = 1 ))
   }
-  
+  xStarLagged = function(x,j,s){
+    nx = nrow(x)
+    return(matrix(c(t(x[(nx-j):(nx-s-j), ])), ncol = 1))
+  }
+  bigW = function(h, outputY, inputX, p, s, intercept=T) {
+    n = nrow(outputY)
+    k = ncol(outputY)
+    truncX = inputX[1:(n+h),]
+    if (intercept) {
+      tempo = cbind( matrix(1, ncol = h), t(yStar(outputY, p)) )
+    } else {
+      tempo = t(yStar(outputY, p))
+    }
+    
+    for (j in 0:(h-1)) tempo = cbind( tempo, t(xStarLagged(truncX, j, s)) )
+    tempo %x% diag(k)
+  }
+
   #point forecast 
   
   phi0 = model$coefficients$intercept
@@ -382,7 +382,7 @@ SVARX.pred = function(model, new.x, h, level=0.95, cf = T, print=T){
   
   PsiStar = function(A, n, k) (pow(A, n)) [1:k, 1:k]
   
-  if (any(phi0)==0){
+  if (sum(phi0)==0){
     add_0 = 0
   } else {
   add_0 = Reduce("+", lapply(0:(h-1), function(j) PsiStar(PhiStar, j, k))) %*% phi0
@@ -427,14 +427,18 @@ SVARX.pred = function(model, new.x, h, level=0.95, cf = T, print=T){
     
     
     if (h==1){
-      tempoA = diag(1, k)
       tempoC = t(CI) %x% diag(1, k)
       tempoE = t(DJ) %x% diag(1, l)
       
-      M = ifelse(any(phi0Star)==0,bdiag(tempoC, tempoE),
-                 bdiag(tempoA, tempoC, tempoE))
+      if (sum(phi0Star)==0) {
+        M = Matrix::bdiag(tempoC, tempoE)
+      }else {
+        tempoA = diag(1, k)
+        M = Matrix::bdiag(tempoA, tempoC, tempoE)
+      }
       return(as.matrix(M))
-    } else {
+    } else
+      {
       tempoC = blocC(PhiStar, h, k)
       
       tempoD = NULL
@@ -447,7 +451,7 @@ SVARX.pred = function(model, new.x, h, level=0.95, cf = T, print=T){
         tempoE = rbind(tempoE, blocE(PhiStar, i, k))
       }
       
-      if (any(phi0Star)==0){
+      if (sum(phi0Star)==0){
 
         nrow1 = nrow(blocE(PhiStar, 0, k))
         nrow2 = nrow(tempoC)
@@ -458,15 +462,19 @@ SVARX.pred = function(model, new.x, h, level=0.95, cf = T, print=T){
         H = cbind(rbind(tempoC, matrix(0, nrow1, ncol1), tempoD),
                   rbind(matrix(0, nrow2, ncol2), tempoE))
       } else {
+        
         tempoA = diag(1,k)
+        
         for (i in 1:(h-1)){
           tempoA = rbind(tempoA, PsiStar(PhiStar, i, k))
         }
         
         tempoB = NULL
+        
         for (i in 1:(h-1)){
           tempoB = rbind(tempoB, blocB(phi0Star, PhiStar, i, k))
         }
+        
         nrow1 = nrow(tempoC) + nrow(tempoE)
         nrow2 = length(phi0)
         nrow3 = nrow(blocE(PhiStar, 0, k))
@@ -482,17 +490,17 @@ SVARX.pred = function(model, new.x, h, level=0.95, cf = T, print=T){
                   rbind(matrix(0, nrow4, ncol3), tempoE))
       }
       return(H)
-    }          
+    }       
   }
   
   sigma = model$covariance
   varBeta = model$covCoef
   
-  eqmp = Reduce("+", lapply(0:(h-1), function(j) 
+  mspe = Reduce("+", lapply(0:(h-1), function(j) 
     PsiStar(PhiStar, j, k) %*% sigma %*% t(PsiStar(PhiStar, j, k))))
   
   
-  if (any(phi0)==0){
+  if (sum(phi0)==0){
     W_nh = bigW(h, y, x, p, s, F)
   } else {
     W_nh = bigW(h, y, x, p, s)
@@ -500,19 +508,19 @@ SVARX.pred = function(model, new.x, h, level=0.95, cf = T, print=T){
   
   H_IJ = bigH(h, phi0Star, PhiStar, BetaStar, lagY, lagX, k, l, p, s)
   
-  correcteur = W_nh %*% H_IJ %*% varBeta %*% t(H_IJ) %*% t(W_nh)
+  correction = W_nh %*% H_IJ %*% varBeta %*% t(H_IJ) %*% t(W_nh)
   
-  if (cf==T) eqmp = eqmp + correcteur
+  if (cf==T) mspe = mspe + correction
   
   IP = matrix(0,nrow=k,ncol=2)
   
-  for (i in 1:k) IP[i,] = ypred[i,] + c(-1,1) * qn * sqrt(eqmp[i,i])
+  for (i in 1:k) IP[i,] = ypred[i,] + c(-1,1) * qn * sqrt(mspe[i,i])
   
   colnames(IP) = c("L95 PI", "U95 PI")
   
   if (print==T) print(cbind(ypred,IP))
   
-  SVARX.pred = list(pred=ypred, ip=IP, eqmp=eqmp)
+  SVARX.pred = list(pred=ypred, ip=IP, mspe=mspe)
 }
 
 
