@@ -21,13 +21,12 @@ sim1 = function(i,n) {
   
   #Estimateurs des moindres carrés de rang plein
   
-  C.ls = t(solve(t(Z)%*%Z, t(Z)%*%W)) 
-  resi = W - Z %*% t(C.ls)
+  para.ls = t(solve(t(Z)%*%Z, t(Z)%*%W)) 
+  resi = W - Z %*% t(para.ls)
   cov.ls = (t(resi) %*% resi) / nrow(W)
   
   #Estimation de rang réduit
-  
-  out2 = reducedRank(C.ls, cov.ls)
+  out2 = reducedRank(para.ls, cov.ls)
 
   #Estimateurs de vraisemblance maximale
   
@@ -46,7 +45,7 @@ sim1 = function(i,n) {
   }
   
   #départ avec les estimés des moindres carrés
-  start.ls = c(out2$A,out2$B0, C.ls[,3])
+  start.ls = c(out2$A,out2$B0, para.ls[,3])
   
   # estimés du maximum de vraisemblance
   out3 = nlminb(start = start.ls, objective = f)
@@ -134,7 +133,7 @@ f = function(par) {
 }
 
 #le départ avec les estimées par moindres carrés
-(start.ls = c(out2$A,out2$B0, C.ls[,3]))
+(start.ls = c(out2$A,out2$B0, para.ls[,3]))
 out3 = nlminb(start = start.ls, objective = f)
 (par.mle=out3$par)
 
