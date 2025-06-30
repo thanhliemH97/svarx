@@ -235,7 +235,6 @@ colVar(res)
 #vraie variance : (t(A)%*%\sigma.e^-1%*%A))^-1
 
 A = matrix(c(-.4,.12), 2,1)
-B = matrix(c(1,-2.5), 1,2)
 sigma.e = matrix(c(25,5.4,5.4,9.0), 2,2)
 solve(t(A)%*%solve(sigma.e)%*%A) 
 84.47205
